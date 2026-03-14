@@ -85,7 +85,7 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
   }
 
   return (
-    <div className="w-full max-w-lg mx-auto px-6">
+    <div className="w-full max-w-lg mx-auto px-4">
       {/* Hidden file inputs */}
       <input
         ref={cameraInputRef}
@@ -113,14 +113,14 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
         <div className="flex flex-col gap-4">
           <button
             onClick={() => cameraInputRef.current?.click()}
-            className="w-full rounded-full bg-pink-accent py-5 text-sm font-semibold tracking-[2px] uppercase text-white transition-colors active:bg-pink-hover"
+            className="w-full min-h-[56px] rounded-xl bg-pink-accent px-6 py-4 text-base font-semibold tracking-[1.5px] uppercase text-white transition-colors active:bg-pink-hover"
           >
             Take a Photo
           </button>
 
           <button
             onClick={() => libraryInputRef.current?.click()}
-            className="w-full rounded-full border-2 border-pink-accent py-5 text-sm font-semibold tracking-[2px] uppercase text-pink-accent transition-colors active:bg-pink-light"
+            className="w-full min-h-[56px] rounded-xl border-2 border-pink-accent px-6 py-4 text-base font-semibold tracking-[1.5px] uppercase text-pink-accent transition-colors active:bg-pink-light"
           >
             Choose from Library
           </button>
@@ -132,7 +132,7 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
       )}
 
       {error && (
-        <div className="mt-4 rounded-lg bg-red-50 px-4 py-3 text-center text-sm text-red-600">
+        <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-center text-sm text-red-600">
           {error}
         </div>
       )}
