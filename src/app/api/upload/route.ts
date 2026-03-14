@@ -55,51 +55,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (files.length > 10) {
-      return NextResponse.json(
-        { error: `Too many files: ${files.length} (maximum is 10)` },
-        { status: 400 }
-      );
-    }
-
     const results: { name: string; key: string }[] = [];
     const errors: string[] = [];
 
-    for (const file of files) {
-      console.log("[upload] Processing file:", {
-        name: file.name,
-        type: file.type,
-        size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
-      });
+    // Process files in parallel batches of 5
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < files.length; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.allSettled(
+        batch.map(async (file) => {
+          console.log("[upload] Processing file:", {
+            name: file.name,
+            type: file.type,
+            size: `${(file.size / 1024 / 1024).toFixed(2)}MB`,
+          });
 
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        const msg = `${file.name}: unsupported type "${file.type}" (allowed: ${ALLOWED_TYPES.join(", ")})`;
-        console.log("[upload] Rejected:", msg);
-        errors.push(msg);
-        continue;
+          if (!ALLOWED_TYPES.includes(file.type)) {
+            throw new Error(`unsupported type "${file.type}" (allowed: ${ALLOWED_TYPES.join(", ")})`);
+          }
+
+          if (file.size > MAX_FILE_SIZE) {
+            throw new Error(`${(file.size / 1024 / 1024).toFixed(1)}MB exceeds 20MB limit`);
+          }
+
+          const key = `${folder}/${uniqueFilename(file.name)}`;
+          console.log("[upload] Uploading to key:", key);
+
+          const buffer = Buffer.from(await file.arrayBuffer());
+          await uploadFile(key, buffer, file.type);
+
+          console.log("[upload] Success:", { name: file.name, key });
+          return { name: file.name, key };
+        })
+      );
+
+      for (let j = 0; j < batchResults.length; j++) {
+        const result = batchResults[j];
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+        } else {
+          const fileName = batch[j].name;
+          const msg = `${fileName}: ${result.reason instanceof Error ? result.reason.message : "upload failed"}`;
+          console.error("[upload] Failed:", msg);
+          errors.push(msg);
+        }
       }
 
-      if (file.size > MAX_FILE_SIZE) {
-        const msg = `${file.name}: ${(file.size / 1024 / 1024).toFixed(1)}MB exceeds 20MB limit`;
-        console.log("[upload] Rejected:", msg);
-        errors.push(msg);
-        continue;
-      }
-
-      const key = `${folder}/${uniqueFilename(file.name)}`;
-      console.log("[upload] Uploading to key:", key);
-
-      const buffer = Buffer.from(await file.arrayBuffer());
-
-      try {
-        await uploadFile(key, buffer, file.type);
-        console.log("[upload] Success:", { name: file.name, key });
-        results.push({ name: file.name, key });
-      } catch (err) {
-        const msg = `${file.name}: ${err instanceof Error ? err.message : "upload failed"}`;
-        console.error("[upload] S3 upload failed:", { key, error: err });
-        errors.push(msg);
-      }
+      console.log(`[upload] Batch ${Math.floor(i / BATCH_SIZE) + 1} complete: ${Math.min(i + BATCH_SIZE, files.length)}/${files.length} processed`);
     }
 
     if (results.length === 0 && errors.length > 0) {

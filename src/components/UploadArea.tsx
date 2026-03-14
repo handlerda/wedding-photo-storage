@@ -8,18 +8,51 @@ interface UploadAreaProps {
   onUploadComplete: (count: number) => void;
 }
 
+const BATCH_SIZE = 5;
+
 export default function UploadArea({ guestName, onUploadComplete }: UploadAreaProps) {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
+
+  async function uploadBatch(files: File[]): Promise<{ uploaded: number; errors: string[] }> {
+    const formData = new FormData();
+    formData.append("guestName", guestName);
+    files.forEach((file) => formData.append("files", file));
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const text = await res.text();
+    console.log("[client] Response:", res.status, text);
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Server returned invalid response (${res.status}): ${text.slice(0, 200)}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(data.error || `Upload failed with status ${res.status}`);
+    }
+
+    return {
+      uploaded: data.uploaded?.length ?? 0,
+      errors: data.errors ?? [],
+    };
+  }
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
 
     setError("");
 
-    // Validate files client-side
+    // Validate all files client-side first
     const validFiles: File[] = [];
     for (let i = 0; i < files.length; i++) {
       const err = validateFile(files[i]);
@@ -30,55 +63,41 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
       validFiles.push(files[i]);
     }
 
-    if (validFiles.length > 10) {
-      setError("Maximum 10 photos at a time");
-      return;
-    }
-
     setIsUploading(true);
+    setProgress({ done: 0, total: validFiles.length });
+
+    let totalUploaded = 0;
+    const allErrors: string[] = [];
 
     try {
-      const formData = new FormData();
-      formData.append("guestName", guestName);
-      validFiles.forEach((file) => formData.append("files", file));
+      // Upload in batches to avoid overwhelming the connection
+      for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
+        const batch = validFiles.slice(i, i + BATCH_SIZE);
 
-      console.log("[client] Uploading", {
-        guestName,
-        files: validFiles.map((f) => ({ name: f.name, type: f.type, size: f.size })),
-      });
+        console.log(`[client] Uploading batch ${Math.floor(i / BATCH_SIZE) + 1}: files ${i + 1}-${Math.min(i + BATCH_SIZE, validFiles.length)} of ${validFiles.length}`);
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+        const result = await uploadBatch(batch);
+        totalUploaded += result.uploaded;
+        allErrors.push(...result.errors);
+        setProgress({ done: Math.min(i + BATCH_SIZE, validFiles.length), total: validFiles.length });
+      }
 
-      const text = await res.text();
-      console.log("[client] Response:", res.status, text);
-
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        setError(`Server returned invalid response (${res.status}): ${text.slice(0, 200)}`);
+      if (totalUploaded === 0 && allErrors.length > 0) {
+        setError(`All uploads failed: ${allErrors.join("; ")}`);
         return;
       }
 
-      if (!res.ok) {
-        setError(data.error || `Upload failed with status ${res.status}`);
-        return;
+      if (allErrors.length > 0) {
+        console.warn("[client] Partial failures:", allErrors);
       }
 
-      if (data.errors?.length) {
-        console.warn("[client] Partial failures:", data.errors);
-      }
-
-      onUploadComplete(data.uploaded.length);
+      onUploadComplete(totalUploaded);
     } catch (err) {
       console.error("[client] Upload error:", err);
       setError(`Upload failed: ${err instanceof Error ? err.message : "Check your connection and try again."}`);
     } finally {
       setIsUploading(false);
-      // Reset inputs so the same file can be re-selected
+      setProgress({ done: 0, total: 0 });
       if (cameraInputRef.current) cameraInputRef.current.value = "";
       if (libraryInputRef.current) libraryInputRef.current.value = "";
     }
@@ -107,7 +126,9 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
       {isUploading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="h-10 w-10 animate-spin rounded-full border-3 border-pink-accent border-t-transparent" />
-          <p className="mt-4 text-sm tracking-wide text-gray-500">Uploading...</p>
+          <p className="mt-4 text-sm tracking-wide text-gray-500">
+            Uploading {progress.done} of {progress.total} photos...
+          </p>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
@@ -126,7 +147,7 @@ export default function UploadArea({ guestName, onUploadComplete }: UploadAreaPr
           </button>
 
           <p className="text-center text-xs text-gray-400 mt-2">
-            JPG, PNG, or WebP &middot; Up to 20MB each &middot; 10 photos max
+            JPG, PNG, or WebP &middot; Up to 20MB each
           </p>
         </div>
       )}
