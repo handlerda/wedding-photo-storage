@@ -29,7 +29,7 @@ export default function UploadSuccess({ count, onUploadMore }: UploadSuccessProp
 
       <button
         onClick={onUploadMore}
-        className="w-full max-w-xs rounded-full bg-pink-accent py-4 text-sm font-semibold tracking-[2px] uppercase text-white transition-colors active:bg-pink-hover"
+        className="w-full max-w-xs min-h-[56px] rounded-xl bg-pink-accent px-6 py-4 text-base font-semibold tracking-[1.5px] uppercase text-white transition-colors active:bg-pink-hover"
       >
         Upload More Photos
       </button>
